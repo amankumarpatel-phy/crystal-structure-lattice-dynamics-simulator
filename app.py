@@ -100,4 +100,5 @@ with tab3:
     except Exception as e: st.error(str(e))
 
 st.divider()
+st.markdown("<div style='text-align:center; padding:18px 0 6px; color:#666; font-size:0.9rem;'>© 2026 Aman Kumar Patel · Made with ❤️ by Aman Kumar Patel</div>", unsafe_allow_html=True)
 st.caption('Research note: V5 is a transparent analysis workstation, not a validated Rietveld refinement package.')
