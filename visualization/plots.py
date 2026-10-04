@@ -84,3 +84,55 @@ def plot_fft_crystal_projection(structure, ax=None, grid_size=256, sigma_pixels=
     ax.set_xlabel(r'$q_x$ (Å$^{-1}$)'); ax.set_ylabel(r'$q_y$ (Å$^{-1}$)')
     ax.set_title('2D FFT of Projected Atomic Density')
     return ax
+
+def fft_ift_reconstruction(structure, grid_size=256, sigma_pixels=1.0, cutoff_Ainv=None):
+    """Return real-space density, FFT, filtered FFT, IFT reconstruction and q axes."""
+    density,power,qx,qy=fft_crystal_projection(structure,grid_size,sigma_pixels)
+    F=np.fft.fftshift(np.fft.fft2(density))
+    F_filtered=F.copy()
+    if cutoff_Ainv is not None and cutoff_Ainv>0:
+        QX,QY=np.meshgrid(qx,qy)
+        mask=np.sqrt(QX**2+QY**2)<=cutoff_Ainv
+        F_filtered*=mask
+    reconstruction=np.fft.ifft2(np.fft.ifftshift(F_filtered)).real
+    return density,F,F_filtered,reconstruction,qx,qy
+
+def plot_ift_reconstruction(structure, ax=None, grid_size=256, sigma_pixels=1.0, cutoff_Ainv=None):
+    """Plot the real-space image reconstructed from a filtered Fourier spectrum."""
+    density,F,F_filtered,reconstruction,qx,qy=fft_ift_reconstruction(
+        structure,grid_size,sigma_pixels,cutoff_Ainv
+    )
+    if ax is None:
+        ax=plt.subplots()[1]
+    pos=np.array(structure.cartesian_positions())
+    xmin,xmax=pos[:,0].min(),pos[:,0].max()
+    ymin,ymax=pos[:,1].min(),pos[:,1].max()
+    ax.imshow(reconstruction,origin='lower',extent=[xmin,xmax,ymin,ymax],aspect='auto')
+    ax.set_xlabel('x (Å)'); ax.set_ylabel('y (Å)')
+    ax.set_title('IFT Reconstruction in Real Space')
+    return ax
+
+def radial_fft_profile(structure, grid_size=256, sigma_pixels=1.0):
+    """Azimuthally average FFT power into a 1D q profile."""
+    density,power,qx,qy=fft_crystal_projection(structure,grid_size,sigma_pixels)
+    QX,QY=np.meshgrid(qx,qy)
+    q=np.sqrt(QX**2+QY**2).ravel()
+    p=power.ravel()
+    bins=np.linspace(0,q.max(),min(180,grid_size//2))
+    idx=np.digitize(q,bins)
+    centers=0.5*(bins[:-1]+bins[1:])
+    prof=np.array([p[idx==i].mean() if np.any(idx==i) else np.nan for i in range(1,len(bins))])
+    return centers,prof
+
+def plot_phonon_dispersion(ax=None, spring_constant=1.0, mass=1.0, points=400):
+    """Monoatomic 1D nearest-neighbour harmonic-chain dispersion, in normalized units."""
+    if ax is None:
+        ax=plt.subplots()[1]
+    q=np.linspace(-np.pi,np.pi,points)
+    omega=2*np.sqrt(max(spring_constant,1e-12)/max(mass,1e-12))*np.abs(np.sin(q/2))
+    ax.plot(q,omega)
+    ax.set_xlabel(r'Wave vector $qa$')
+    ax.set_ylabel(r'Angular frequency $\omega$ (normalized)')
+    ax.set_title('1D Monoatomic Chain — Acoustic Phonon Dispersion')
+    ax.grid(alpha=.2)
+    return ax
