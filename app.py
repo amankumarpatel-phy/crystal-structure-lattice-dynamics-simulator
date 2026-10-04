@@ -67,9 +67,9 @@ with tab1:
         st.pyplot(fig); plt.close(fig)
     with f2:
         st.markdown('**Fourier-space interpretation**')
-        st.latex(r'F(q_x,q_y)=\\mathcal{F}\\{\\rho(x,y)\\}')
+        st.latex(r'F(q_x,q_y)=\mathcal{F}\{\rho(x,y)\}')
         st.latex(r'I_{FFT}(q_x,q_y)=|F(q_x,q_y)|^2')
-        st.write('Periodic features in the projected real-space crystal produce structured features in reciprocal/Fourier space. The displayed q-axis is in Å⁻¹.')
+        st.write('Periodic features in the projected real-space crystal produce structured features in reciprocal/Fourier space. The displayed q-axes are in Å⁻¹.')
     c1,c2=st.columns(2)
     with c1:
         tt,I,peaks=powder_pattern(s,wavelength,hmax=hmax,B=B,peak_width=width)
