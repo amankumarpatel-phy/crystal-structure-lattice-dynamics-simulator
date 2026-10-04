@@ -221,7 +221,9 @@ with tab3:
             f"({analysis['n_points']} raw data points)."
         )
 
-        inst_fwhm=inst.instrumental_fwhm(obs_tt)
+        # Propagate the instrument 2θ zero-shift into the downstream analysis.
+        corrected_obs_tt=inst.corrected_two_theta(obs_tt)
+        inst_fwhm=inst.instrumental_fwhm(corrected_obs_tt)
         sample_fwhm=correct_instrumental_broadening(obs_fwhm,inst_fwhm)
 
         valid=sample_fwhm>0
@@ -231,8 +233,8 @@ with tab3:
                 'Adjust the Caglioti U/V/W parameters or use an instrument profile calibrated from a standard.'
             )
         else:
-            theta=obs_tt[valid]/2
-            corrected_tt=obs_tt[valid]
+            theta=corrected_obs_tt[valid]/2
+            corrected_tt=corrected_obs_tt[valid]
             corrected_fwhm=sample_fwhm[valid]
             sizes=scherrer_size(corrected_fwhm,theta,wavelength)
             wh=williamson_hall(corrected_tt,corrected_fwhm,wavelength)
