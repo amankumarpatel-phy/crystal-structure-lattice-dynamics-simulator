@@ -6,7 +6,7 @@ import streamlit as st
 
 from crystal.cif import read_cif
 from crystal.scattering import powder_pattern
-from visualization.plots import plot_structure, plot_xrd, plot_reciprocal_lattice
+from visualization.plots import plot_structure, plot_xrd, plot_reciprocal_lattice, plot_fft_crystal_projection
 from analysis.io import load_xrd_csv
 from analysis.xrd import detect_peaks, correct_instrumental_broadening, scherrer_size, williamson_hall
 from analysis.refinement import fit_single_peak, pseudo_voigt
@@ -27,6 +27,8 @@ with st.sidebar:
     plane_h=st.number_input('Reciprocal plane h',value=1,min_value=-6,max_value=6,step=1)
     plane_k=st.number_input('Reciprocal plane k',value=0,min_value=-6,max_value=6,step=1)
     plane_l=st.number_input('Reciprocal plane l',value=0,min_value=-6,max_value=6,step=1)
+    fft_grid=st.select_slider('FFT grid size',[64,128,256,512],value=256)
+    fft_sigma=st.slider('FFT atomic-density smoothing (pixels)',0.0,3.0,1.0,0.25)
     U=st.number_input('Caglioti U',value=0.0,format='%.6f')
     V=st.number_input('Caglioti V',value=0.0,format='%.6f')
     W=st.number_input('Caglioti W (deg²)',value=0.01,min_value=0.0,format='%.6f')
@@ -56,6 +58,18 @@ with tab1:
         plot_reciprocal_lattice(s,fig.add_subplot(111,projection='3d'),hmax=reciprocal_hmax,plane_hkl=(plane_h,plane_k,plane_l))
         st.pyplot(fig); plt.close(fig)
         st.caption(f'Reciprocal-space visualization: lattice points up to |h,k,l| ≤ {reciprocal_hmax}; selected plane ({plane_h}{plane_k}{plane_l}).')
+    st.subheader('Fourier Transform / FFT')
+    st.caption('2D FFT of the projected atomic density. This is a Fourier-space visualization and is intentionally shown separately from the powder-XRD scattering model.')
+    f1,f2=st.columns(2)
+    with f1:
+        fig=plt.figure(figsize=(6,5))
+        plot_fft_crystal_projection(s,fig.add_subplot(111),grid_size=fft_grid,sigma_pixels=fft_sigma)
+        st.pyplot(fig); plt.close(fig)
+    with f2:
+        st.markdown('**Fourier-space interpretation**')
+        st.latex(r'F(q_x,q_y)=\\mathcal{F}\\{\\rho(x,y)\\}')
+        st.latex(r'I_{FFT}(q_x,q_y)=|F(q_x,q_y)|^2')
+        st.write('Periodic features in the projected real-space crystal produce structured features in reciprocal/Fourier space. The displayed q-axis is in Å⁻¹.')
     c1,c2=st.columns(2)
     with c1:
         tt,I,peaks=powder_pattern(s,wavelength,hmax=hmax,B=B,peak_width=width)
