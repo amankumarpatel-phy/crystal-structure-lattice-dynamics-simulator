@@ -136,3 +136,48 @@ def plot_phonon_dispersion(ax=None, spring_constant=1.0, mass=1.0, points=400):
     ax.set_title('1D Monoatomic Chain — Acoustic Phonon Dispersion')
     ax.grid(alpha=.2)
     return ax
+
+def plot_fft_phase(structure, ax=None, grid_size=256, sigma_pixels=1.0):
+    """Plot the phase of the 2D Fourier transform of projected atomic density."""
+    density, _, qx, qy = fft_crystal_projection(structure, grid_size, sigma_pixels)
+    F = np.fft.fftshift(np.fft.fft2(density))
+    phase = np.angle(F)
+    if ax is None:
+        ax = plt.subplots()[1]
+    extent=[qx.min(), qx.max(), qy.min(), qy.max()]
+    ax.imshow(phase, origin='lower', extent=extent, aspect='equal', vmin=-np.pi, vmax=np.pi)
+    ax.set_xlabel(r'$q_x$ (Å$^{-1}$)')
+    ax.set_ylabel(r'$q_y$ (Å$^{-1}$)')
+    ax.set_title('FFT Phase Spectrum')
+    return ax
+
+def plot_fft_autocorrelation(structure, ax=None, grid_size=256, sigma_pixels=1.0):
+    """Plot the real-space autocorrelation implied by |FFT|²."""
+    density, power, _, _ = fft_crystal_projection(structure, grid_size, sigma_pixels)
+    ac = np.fft.fftshift(np.fft.ifft2(np.fft.ifftshift(power)).real)
+    ac /= np.max(np.abs(ac)) if np.max(np.abs(ac)) > 0 else 1.0
+    if ax is None:
+        ax = plt.subplots()[1]
+    ax.imshow(ac, origin='lower', aspect='equal')
+    ax.set_xlabel('Δx (grid)')
+    ax.set_ylabel('Δy (grid)')
+    ax.set_title('Real-Space Autocorrelation')
+    return ax
+
+def plot_diatomic_dispersion(ax=None, kappa=1.0, m1=1.0, m2=2.0, points=500):
+    """Acoustic and optical branches of a 1D diatomic nearest-neighbour chain."""
+    if ax is None:
+        ax = plt.subplots()[1]
+    q = np.linspace(-np.pi, np.pi, points)
+    S = kappa/m1 + kappa/m2
+    disc = np.maximum(S*S - 4*(kappa*kappa/(m1*m2))*np.sin(q/2.0)**2, 0.0)
+    omega_ac = np.sqrt(np.maximum(S - np.sqrt(disc), 0.0))
+    omega_op = np.sqrt(np.maximum(S + np.sqrt(disc), 0.0))
+    ax.plot(q, omega_ac, label='Acoustic branch')
+    ax.plot(q, omega_op, label='Optical branch')
+    ax.set_xlabel(r'Wave vector $qa$')
+    ax.set_ylabel(r'Angular frequency $\omega$ (normalized)')
+    ax.set_title('Diatomic Chain — Acoustic & Optical Phonons')
+    ax.legend()
+    ax.grid(alpha=.2)
+    return ax
