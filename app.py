@@ -75,27 +75,23 @@ with tab2:
         try:
             x,y,xname,yname,meta=load_xrd_csv(up)
 
-            # Show exactly how the uploaded file was interpreted.
             st.subheader('Data diagnostics')
             m1,m2,m3,m4=st.columns(4)
             m1.metric('Data points',meta['n_points'])
             m2.metric('2θ range',f"{meta['x_min']:.2f}–{meta['x_max']:.2f}°")
             m3.metric('Median Δ2θ',f"{meta['median_step']:.4g}°" if np.isfinite(meta['median_step']) else '—')
             m4.metric('Detected format','Peak table' if meta['kind']=='peak_table' else 'Raw scan')
-
             st.caption(f"Using **{xname}** as 2θ and **{yname}** as intensity.")
 
             if meta['kind']=='peak_table':
                 st.warning(
                     'This file is a diffraction **peak/reflection table**, not a raw XRD scan. '
-                    'Peak detection and FWHM fitting are disabled for this file. '
-                    'For peak fitting, upload the original dense experimental 2θ–intensity scan.'
+                    'Peak detection, FWHM fitting, Scherrer analysis and Williamson–Hall analysis '
+                    'require the original dense experimental 2θ–intensity scan.'
                 )
                 table=meta['table'].copy()
                 st.dataframe(table,use_container_width=True)
                 st.download_button('Download interpreted peak table',table.to_csv(index=False).encode(),'interpreted_peak_table.csv','text/csv')
-
-                # A peak table can still be useful for indexing.
                 st.subheader('Reflection / peak table')
                 a_guess=st.number_input('Lattice parameter guess a (Å)',value=5.4300,min_value=0.1,key='peak_a')
                 centering=st.selectbox('Lattice centering',['primitive','fcc','bcc'],key='peak_centering')
@@ -104,6 +100,8 @@ with tab2:
                 idf=pd.DataFrame([{**z,'hkl':str(z['hkl'])} for z in idx])
                 st.dataframe(idf,use_container_width=True)
                 st.download_button('Export indexed peaks CSV',idf.to_csv(index=False).encode(),'indexed_peaks.csv','text/csv')
+                st.session_state.pop('experimental_analysis',None)
+
             else:
                 if meta['n_points'] < 1000:
                     st.error(
@@ -111,64 +109,172 @@ with tab2:
                         f"This file contains **{meta['n_points']}** points. "
                         "Please upload the original dense experimental 2θ–intensity scan."
                     )
-                    st.stop()
-
-                # Raw scan: this is the only format passed to peak detection.
-                fig,ax=plt.subplots(figsize=(9,4))
-                ax.plot(x,y,label='Experimental')
-                ax.set_xlabel('2θ (degrees)'); ax.set_ylabel('Intensity'); ax.legend()
-                st.pyplot(fig); plt.close(fig)
-
-                prominence=st.slider('Peak prominence',0.01,0.50,0.05,0.01)
-                distance=st.slider('Minimum point distance',1,50,8)
-                peaks_x,peaks_y,_=detect_peaks(x,y,prominence,distance)
-                st.metric('Detected peaks',len(peaks_x))
-                st.dataframe(pd.DataFrame({'2θ (deg)':peaks_x,'Intensity':peaks_y}),use_container_width=True)
-
-                if len(peaks_x)==0:
-                    st.info('No significant local maxima were detected. Check the raw scan, baseline/background, and peak-prominence setting.')
+                    st.session_state.pop('experimental_analysis',None)
                 else:
-                    a_guess=st.number_input('Lattice parameter guess a (Å)',value=5.4300,min_value=0.1,key='raw_a')
-                    centering=st.selectbox('Lattice centering',['primitive','fcc','bcc'],key='raw_centering')
-                    tol=st.number_input('Indexing tolerance (°)',value=0.25,min_value=0.01,key='raw_tol')
-                    idx=index_cubic_peaks(peaks_x,a_guess,wavelength,8,tol,centering)
-                    idf=pd.DataFrame([{**z,'hkl':str(z['hkl'])} for z in idx])
-                    st.dataframe(idf,use_container_width=True)
-                    st.download_button('Export indexed peaks CSV',idf.to_csv(index=False).encode(),'indexed_peaks.csv','text/csv')
+                    fig,ax=plt.subplots(figsize=(9,4))
+                    ax.plot(x,y,label='Experimental')
+                    ax.set_xlabel('2θ (degrees)'); ax.set_ylabel('Intensity'); ax.legend()
+                    st.pyplot(fig); plt.close(fig)
 
-                    center=st.number_input('Peak center guess 2θ (deg)',value=float(peaks_x[0]))
-                    window=st.number_input('Fit window ±°',value=0.5,min_value=0.05)
-                    mask=(x>=center-window)&(x<=center+window)
-                    if mask.sum() >= 8:
-                        fit=fit_single_peak(x[mask],y[mask],center_guess=center,model='pseudo_voigt')
-                        st.json(fit)
-                        fig,ax=plt.subplots(figsize=(8,3))
-                        ax.plot(x[mask],y[mask],'.',label='data')
-                        ax.plot(x[mask],pseudo_voigt(x[mask],fit['amplitude'],fit['center'],fit['fwhm'],fit['eta'],fit['background']),label='pseudo-Voigt')
-                        ax.legend(); ax.set_xlabel('2θ'); ax.set_ylabel('Intensity')
-                        st.pyplot(fig); plt.close(fig)
+                    st.subheader('Peak detection')
+                    c1,c2,c3=st.columns(3)
+                    with c1:
+                        prominence=st.slider('Peak prominence',0.01,0.50,0.05,0.01)
+                    with c2:
+                        distance=st.slider('Minimum point distance',1,50,8)
+                    with c3:
+                        fit_window=st.number_input('Peak fitting window ±°',value=0.50,min_value=0.05,step=0.05)
+
+                    peaks_x,peaks_y,_=detect_peaks(x,y,prominence,distance)
+                    st.metric('Detected peaks',len(peaks_x))
+                    peak_summary=pd.DataFrame({'2θ (deg)':peaks_x,'Intensity':peaks_y})
+                    st.dataframe(peak_summary,use_container_width=True)
+
+                    if len(peaks_x)==0:
+                        st.session_state.pop('experimental_analysis',None)
+                        st.info('No significant local maxima were detected. Adjust peak prominence/distance or check the raw scan.')
                     else:
-                        st.warning('The selected peak window contains too few points for reliable profile fitting.')
-        except Exception as e:
-            st.error(str(e))
-    else:
-        st.info('Upload experimental data to activate peak detection, indexing and profile fitting.')
+                        st.subheader('Automatic peak fitting')
+                        fit_rows=[]
+                        fit_windows=[]
+                        for center in peaks_x:
+                            mask=(x>=center-fit_window)&(x<=center+fit_window)
+                            if mask.sum()<8:
+                                continue
+                            try:
+                                fit=fit_single_peak(x[mask],y[mask],center_guess=float(center),model='pseudo_voigt')
+                                if fit['success'] and np.isfinite(fit['fwhm']) and fit['fwhm']>0:
+                                    fit_rows.append({
+                                        '2θ (deg)':fit['center'],
+                                        'FWHM (deg)':fit['fwhm'],
+                                        'Intensity':fit['amplitude'],
+                                        'R²':fit['r2'],
+                                        'η':fit['eta']
+                                    })
+                                    fit_windows.append((x[mask],y[mask],fit))
+                            except Exception:
+                                continue
+
+                        fit_df=pd.DataFrame(fit_rows)
+                        if fit_df.empty:
+                            st.session_state.pop('experimental_analysis',None)
+                            st.warning('No peaks could be fitted reliably with the current fitting window.')
+                        else:
+                            fit_df=fit_df.sort_values('2θ (deg)').reset_index(drop=True)
+                            st.dataframe(fit_df,use_container_width=True)
+                            st.download_button(
+                                'Export fitted peak table CSV',
+                                fit_df.to_csv(index=False).encode(),
+                                'fitted_experimental_peaks.csv',
+                                'text/csv'
+                            )
+
+                            # Store only results derived from the current experimental scan.
+                            st.session_state['experimental_analysis']={
+                                'two_theta':fit_df['2θ (deg)'].to_numpy(),
+                                'fwhm':fit_df['FWHM (deg)'].to_numpy(),
+                                'intensity':fit_df['Intensity'].to_numpy(),
+                                'r2':fit_df['R²'].to_numpy(),
+                                'x_name':xname,
+                                'y_name':yname,
+                                'n_points':meta['n_points'],
+                            }
+
+                            st.success(
+                                f"{len(fit_df)} experimental peaks were fitted. "
+                                "These fitted values now feed the Size / Strain analysis."
+                            )
+
+                            if len(fit_windows):
+                                plot_peak=st.selectbox(
+                                    'View fitted peak',
+                                    list(range(len(fit_windows))),
+                                    format_func=lambda i: f"Peak {i+1}: {fit_windows[i][2]['center']:.3f}°"
+                                )
+                                px,py,pf=fit_windows[plot_peak]
+                                fig,ax=plt.subplots(figsize=(8,3))
+                                ax.plot(px,py,'.',label='Experimental')
+                                ax.plot(
+                                    px,
+                                    pseudo_voigt(px,pf['amplitude'],pf['center'],pf['fwhm'],pf['eta'],pf['background']),
+                                    label='Pseudo-Voigt fit'
+                                )
+                                ax.set_xlabel('2θ (degrees)'); ax.set_ylabel('Intensity'); ax.legend()
+                                st.pyplot(fig); plt.close(fig)
 
 with tab3:
-    st.write('Enter fitted peak positions and observed FWHM values.')
-    tt_text=st.text_input('2θ peaks (comma separated)','28.44,47.30,56.12')
-    fwhm_text=st.text_input('Observed FWHM (deg, comma separated)','0.16,0.20,0.24')
-    try:
-        tt=np.array([float(v.strip()) for v in tt_text.split(',')]); fwhm=np.array([float(v.strip()) for v in fwhm_text.split(',')])
-        if len(tt)!=len(fwhm): raise ValueError('Peak and FWHM counts must match.')
-        inst_fwhm=inst.instrumental_fwhm(tt); sample_fwhm=correct_instrumental_broadening(fwhm,inst_fwhm)
-        sizes=scherrer_size(sample_fwhm,tt/2,wavelength); wh=williamson_hall(tt,sample_fwhm,wavelength)
-        dframe=pd.DataFrame({'2θ (deg)':tt,'Observed FWHM (deg)':fwhm,'Instrument FWHM (deg)':inst_fwhm,'Sample FWHM (deg)':sample_fwhm,'Scherrer D (Å)':sizes})
-        st.dataframe(dframe,use_container_width=True)
-        st.metric('Williamson–Hall size',f'{wh[4]:.2f} Å'); st.metric('Williamson–Hall microstrain',f'{wh[2]:.5g}')
-        fig,ax=plt.subplots(figsize=(7,4)); ax.scatter(wh[0],wh[1]); ax.plot(wh[0],wh[3]+wh[2]*wh[0]); ax.set_xlabel('4 sin θ'); ax.set_ylabel('β cos θ (rad)'); ax.set_title('Williamson–Hall'); st.pyplot(fig); plt.close(fig)
-        st.download_button('Export size/strain report CSV',dframe.to_csv(index=False).encode(),'size_strain_report.csv','text/csv')
-    except Exception as e: st.error(str(e))
+    st.subheader('Size / Strain Analysis')
+    analysis=st.session_state.get('experimental_analysis')
+
+    if not analysis:
+        st.info(
+            'No experimental peak-fit results are available yet. '
+            'Go to **Experimental XRD**, upload a raw scan with at least 1000 points, '
+            'detect the peaks, and let the application fit them first.'
+        )
+    else:
+        obs_tt=np.asarray(analysis['two_theta'],float)
+        obs_fwhm=np.asarray(analysis['fwhm'],float)
+
+        st.write(
+            f"Using **{len(obs_tt)} fitted experimental peaks** from the current XRD dataset "
+            f"({analysis['n_points']} raw data points)."
+        )
+
+        inst_fwhm=inst.instrumental_fwhm(obs_tt)
+        sample_fwhm=correct_instrumental_broadening(obs_fwhm,inst_fwhm)
+
+        valid=sample_fwhm>0
+        if valid.sum()<2:
+            st.error(
+                'Instrumental broadening is equal to or larger than the fitted peak widths. '
+                'Adjust the Caglioti U/V/W parameters or use an instrument profile calibrated from a standard.'
+            )
+        else:
+            theta=obs_tt[valid]/2
+            corrected_tt=obs_tt[valid]
+            corrected_fwhm=sample_fwhm[valid]
+            sizes=scherrer_size(corrected_fwhm,theta,wavelength)
+            wh=williamson_hall(corrected_tt,corrected_fwhm,wavelength)
+
+            dframe=pd.DataFrame({
+                '2θ (deg)':corrected_tt,
+                'Observed FWHM (deg)':obs_fwhm[valid],
+                'Instrument FWHM (deg)':inst_fwhm[valid],
+                'Corrected Sample FWHM (deg)':corrected_fwhm,
+                'Scherrer D (Å)':sizes
+            })
+            st.dataframe(dframe,use_container_width=True)
+
+            c1,c2=st.columns(2)
+            with c1:
+                st.metric('Mean Scherrer crystallite size',f'{np.mean(sizes):.2f} Å')
+            with c2:
+                st.metric('Williamson–Hall size',f'{wh[4]:.2f} Å')
+
+            st.metric('Williamson–Hall microstrain',f'{wh[2]:.6g}')
+
+            fig,ax=plt.subplots(figsize=(7,4))
+            ax.scatter(wh[0],wh[1],label='Experimental fitted peaks')
+            ax.plot(wh[0],wh[3]+wh[2]*wh[0],label='Linear W–H fit')
+            ax.set_xlabel('4 sin θ')
+            ax.set_ylabel('β cos θ (rad)')
+            ax.set_title('Williamson–Hall Size/Strain Analysis')
+            ax.legend()
+            st.pyplot(fig)
+            plt.close(fig)
+
+            st.download_button(
+                'Export size/strain report CSV',
+                dframe.to_csv(index=False).encode(),
+                'size_strain_report.csv',
+                'text/csv'
+            )
+
+            st.caption(
+                'All values above are derived from the uploaded experimental XRD scan, '
+                'the fitted peak widths, the selected wavelength, and the Caglioti U/V/W instrument model.'
+            )
 
 st.divider()
 st.markdown("<div style='text-align:center; padding:18px 0 6px; color:#666; font-size:0.9rem;'>© 2026 Aman Kumar Patel · Made with ❤️ by Aman Kumar Patel</div>", unsafe_allow_html=True)
