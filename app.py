@@ -90,6 +90,14 @@ with tab2:
                 st.dataframe(idf,use_container_width=True)
                 st.download_button('Export indexed peaks CSV',idf.to_csv(index=False).encode(),'indexed_peaks.csv','text/csv')
             else:
+                if meta['n_points'] < 1000:
+                    st.error(
+                        f"Raw XRD analysis requires at least **1000 data points**. "
+                        f"This file contains **{meta['n_points']}** points. "
+                        "Please upload the original dense experimental 2θ–intensity scan."
+                    )
+                    st.stop()
+
                 # Raw scan: this is the only format passed to peak detection.
                 fig,ax=plt.subplots(figsize=(9,4))
                 ax.plot(x,y,label='Experimental')
