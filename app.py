@@ -22,8 +22,8 @@ from analysis.indexing import index_cubic_peaks
 from scipy.signal import savgol_filter
 from scipy.stats import linregress
 
-st.set_page_config(page_title='Crystal Structure & Lattice Dynamics Simulator V5', layout='wide')
-st.title('Crystal Structure & Lattice Dynamics Simulator — V5')
+st.set_page_config(page_title='Crystal Structure & Lattice Dynamics Simulator', layout='wide')
+st.title('Crystal Structure & Lattice Dynamics Simulator')
 st.caption('CIF → Real Space → Reciprocal/Fourier Space → XRD → Peak Analysis → Lattice Dynamics')
 
 
@@ -480,4 +480,4 @@ with tab_dyn:
 
 st.divider()
 st.markdown("<div style='text-align:center; padding:18px 0 6px; color:#666; font-size:0.9rem;'>© 2026 Aman Kumar Patel · Made with ❤️ by Aman Kumar Patel</div>", unsafe_allow_html=True)
-st.caption('Research note: V5 is a transparent computational workstation, not a validated Rietveld or first-principles phonon package.')
+st.caption('Research note: It is a transparent computational workstation, not a validated Rietveld or first-principles phonon package.')
