@@ -50,9 +50,24 @@ with tab1:
     with c2:
         tt,I,peaks=powder_pattern(s,wavelength,hmax=hmax,B=B,peak_width=width)
         fig,ax=plt.subplots(figsize=(7,4)); plot_xrd(tt,I,ax); st.pyplot(fig); plt.close(fig)
+
+        # The simulated pattern is a dense scan (default: 3601 points).
+        scan_df=pd.DataFrame({'2θ (deg)':tt,'Intensity (normalized)':I})
+        st.subheader('Simulated XRD scan')
+        st.caption(f'Dense simulated dataset: **{len(scan_df)} points** with Δ2θ ≈ **{(tt[1]-tt[0]):.4f}°**.')
+        st.dataframe(scan_df,use_container_width=True,height=320)
+        st.download_button(
+            'Download simulated XRD CSV',
+            scan_df.to_csv(index=False).encode(),
+            'simulated_xrd_scan.csv',
+            'text/csv'
+        )
+
         if peaks:
-            df=pd.DataFrame(peaks,columns=['2θ','Intensity','hkl','d (Å)']).sort_values('Intensity',ascending=False).head(15)
-            st.dataframe(df,use_container_width=True)
+            peak_df=pd.DataFrame(peaks,columns=['2θ','Intensity','hkl','d (Å)']).sort_values('Intensity',ascending=False)
+            st.subheader('Reflection summary')
+            st.caption('Showing the 15 strongest calculated reflections; the full scan above contains all simulated intensity points.')
+            st.dataframe(peak_df.head(15),use_container_width=True)
 
 with tab2:
     up=st.file_uploader('Upload experimental XRD CSV/XY: raw scan or peak table',type=['csv','xy','txt'],key='exp')
