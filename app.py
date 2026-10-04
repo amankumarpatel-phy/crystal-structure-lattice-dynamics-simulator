@@ -55,33 +55,81 @@ with tab1:
             st.dataframe(df,use_container_width=True)
 
 with tab2:
-    up=st.file_uploader('Upload experimental XRD CSV/XY: first column 2θ, second intensity',type=['csv','xy','txt'],key='exp')
+    up=st.file_uploader('Upload experimental XRD CSV/XY: raw scan or peak table',type=['csv','xy','txt'],key='exp')
     if up:
         try:
-            x,y,_,_=load_xrd_csv(up)
-            fig,ax=plt.subplots(figsize=(9,4)); ax.plot(x,y,label='Experimental'); ax.set_xlabel('2θ (degrees)'); ax.set_ylabel('Intensity'); ax.legend(); st.pyplot(fig); plt.close(fig)
-            prominence=st.slider('Peak prominence',0.01,0.50,0.05,0.01)
-            distance=st.slider('Minimum point distance',1,50,8)
-            peaks_x,peaks_y,_=detect_peaks(x,y,prominence,distance)
-            st.metric('Detected peaks',len(peaks_x))
-            st.dataframe(pd.DataFrame({'2θ (deg)':peaks_x,'Intensity':peaks_y}),use_container_width=True)
-            a_guess=st.number_input('Lattice parameter guess a (Å)',value=5.4300,min_value=0.1)
-            centering=st.selectbox('Lattice centering',['primitive','fcc','bcc'])
-            tol=st.number_input('Indexing tolerance (°)',value=0.25,min_value=0.01)
-            idx=index_cubic_peaks(peaks_x,a_guess,wavelength,8,tol,centering)
-            idf=pd.DataFrame([{**z,'hkl':str(z['hkl'])} for z in idx])
-            st.dataframe(idf,use_container_width=True)
-            st.download_button('Export indexed peaks CSV',idf.to_csv(index=False).encode(),'indexed_peaks.csv','text/csv')
-            center=st.number_input('Peak center guess 2θ (deg)',value=float(x[np.argmax(y)]))
-            window=st.number_input('Fit window ±°',value=0.5,min_value=0.05)
-            mask=(x>=center-window)&(x<=center+window)
-            fit=fit_single_peak(x[mask],y[mask],center_guess=center,model='pseudo_voigt')
-            st.json(fit)
-            fig,ax=plt.subplots(figsize=(8,3)); ax.plot(x[mask],y[mask],'.',label='data')
-            ax.plot(x[mask],pseudo_voigt(x[mask],fit['amplitude'],fit['center'],fit['fwhm'],fit['eta'],fit['background']),label='pseudo-Voigt')
-            ax.legend(); ax.set_xlabel('2θ'); ax.set_ylabel('Intensity'); st.pyplot(fig); plt.close(fig)
-        except Exception as e: st.error(str(e))
-    else: st.info('Upload experimental data to activate peak detection, indexing and profile fitting.')
+            x,y,xname,yname,meta=load_xrd_csv(up)
+
+            # Show exactly how the uploaded file was interpreted.
+            st.subheader('Data diagnostics')
+            m1,m2,m3,m4=st.columns(4)
+            m1.metric('Data points',meta['n_points'])
+            m2.metric('2θ range',f"{meta['x_min']:.2f}–{meta['x_max']:.2f}°")
+            m3.metric('Median Δ2θ',f"{meta['median_step']:.4g}°" if np.isfinite(meta['median_step']) else '—')
+            m4.metric('Detected format','Peak table' if meta['kind']=='peak_table' else 'Raw scan')
+
+            st.caption(f"Using **{xname}** as 2θ and **{yname}** as intensity.")
+
+            if meta['kind']=='peak_table':
+                st.warning(
+                    'This file is a diffraction **peak/reflection table**, not a raw XRD scan. '
+                    'Peak detection and FWHM fitting are disabled for this file. '
+                    'For peak fitting, upload the original dense experimental 2θ–intensity scan.'
+                )
+                table=meta['table'].copy()
+                st.dataframe(table,use_container_width=True)
+                st.download_button('Download interpreted peak table',table.to_csv(index=False).encode(),'interpreted_peak_table.csv','text/csv')
+
+                # A peak table can still be useful for indexing.
+                st.subheader('Reflection / peak table')
+                a_guess=st.number_input('Lattice parameter guess a (Å)',value=5.4300,min_value=0.1,key='peak_a')
+                centering=st.selectbox('Lattice centering',['primitive','fcc','bcc'],key='peak_centering')
+                tol=st.number_input('Indexing tolerance (°)',value=0.25,min_value=0.01,key='peak_tol')
+                idx=index_cubic_peaks(x,a_guess,wavelength,8,tol,centering)
+                idf=pd.DataFrame([{**z,'hkl':str(z['hkl'])} for z in idx])
+                st.dataframe(idf,use_container_width=True)
+                st.download_button('Export indexed peaks CSV',idf.to_csv(index=False).encode(),'indexed_peaks.csv','text/csv')
+            else:
+                # Raw scan: this is the only format passed to peak detection.
+                fig,ax=plt.subplots(figsize=(9,4))
+                ax.plot(x,y,label='Experimental')
+                ax.set_xlabel('2θ (degrees)'); ax.set_ylabel('Intensity'); ax.legend()
+                st.pyplot(fig); plt.close(fig)
+
+                prominence=st.slider('Peak prominence',0.01,0.50,0.05,0.01)
+                distance=st.slider('Minimum point distance',1,50,8)
+                peaks_x,peaks_y,_=detect_peaks(x,y,prominence,distance)
+                st.metric('Detected peaks',len(peaks_x))
+                st.dataframe(pd.DataFrame({'2θ (deg)':peaks_x,'Intensity':peaks_y}),use_container_width=True)
+
+                if len(peaks_x)==0:
+                    st.info('No significant local maxima were detected. Check the raw scan, baseline/background, and peak-prominence setting.')
+                else:
+                    a_guess=st.number_input('Lattice parameter guess a (Å)',value=5.4300,min_value=0.1,key='raw_a')
+                    centering=st.selectbox('Lattice centering',['primitive','fcc','bcc'],key='raw_centering')
+                    tol=st.number_input('Indexing tolerance (°)',value=0.25,min_value=0.01,key='raw_tol')
+                    idx=index_cubic_peaks(peaks_x,a_guess,wavelength,8,tol,centering)
+                    idf=pd.DataFrame([{**z,'hkl':str(z['hkl'])} for z in idx])
+                    st.dataframe(idf,use_container_width=True)
+                    st.download_button('Export indexed peaks CSV',idf.to_csv(index=False).encode(),'indexed_peaks.csv','text/csv')
+
+                    center=st.number_input('Peak center guess 2θ (deg)',value=float(peaks_x[0]))
+                    window=st.number_input('Fit window ±°',value=0.5,min_value=0.05)
+                    mask=(x>=center-window)&(x<=center+window)
+                    if mask.sum() >= 8:
+                        fit=fit_single_peak(x[mask],y[mask],center_guess=center,model='pseudo_voigt')
+                        st.json(fit)
+                        fig,ax=plt.subplots(figsize=(8,3))
+                        ax.plot(x[mask],y[mask],'.',label='data')
+                        ax.plot(x[mask],pseudo_voigt(x[mask],fit['amplitude'],fit['center'],fit['fwhm'],fit['eta'],fit['background']),label='pseudo-Voigt')
+                        ax.legend(); ax.set_xlabel('2θ'); ax.set_ylabel('Intensity')
+                        st.pyplot(fig); plt.close(fig)
+                    else:
+                        st.warning('The selected peak window contains too few points for reliable profile fitting.')
+        except Exception as e:
+            st.error(str(e))
+    else:
+        st.info('Upload experimental data to activate peak detection, indexing and profile fitting.')
 
 with tab3:
     st.write('Enter fitted peak positions and observed FWHM values.')
