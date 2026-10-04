@@ -93,3 +93,13 @@ This package does **not** implement a full Rietveld refinement. It does not yet 
 - Anisotropic size/strain models
 - Rietveld-compatible calculation layer
 - Experimental metadata export and provenance report
+
+
+---
+
+<div align="center">
+
+**© 2026 Aman Kumar Patel**  
+*Made with ❤️ by Aman Kumar Patel*
+
+</div>
