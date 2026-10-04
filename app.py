@@ -202,6 +202,9 @@ with tab2:
                                 ax.set_xlabel('2θ (degrees)'); ax.set_ylabel('Intensity'); ax.legend()
                                 st.pyplot(fig); plt.close(fig)
 
+        except Exception as e:
+            st.error(f"XRD analysis error: {e}")
+
 with tab3:
     st.subheader('Size / Strain Analysis')
     analysis=st.session_state.get('experimental_analysis')
