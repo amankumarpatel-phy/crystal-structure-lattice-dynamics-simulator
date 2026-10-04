@@ -43,3 +43,44 @@ def plot_reciprocal_lattice(structure, ax=None, hmax=4, plane_hkl=(1,0,0), plane
     ax.set_xlabel(r'$G_x$ (Å$^{-1}$)'); ax.set_ylabel(r'$G_y$ (Å$^{-1}$)'); ax.set_zlabel(r'$G_z$ (Å$^{-1}$)')
     ax.set_title(f'Reciprocal Lattice & ({h}{k}{l}) Plane')
     return ax
+
+
+def fft_crystal_projection(structure, grid_size=256, sigma_pixels=1.0):
+    """Build a 2D x-y atomic-density projection and return its FFT power spectrum.
+
+    The FFT is a mathematical Fourier-space visualization of the projected
+    atomic density; it is not a replacement for the powder-XRD scattering model.
+    """
+    pos=structure.cartesian_positions()
+    xy=pos[:,:2]
+    xmin,xmax=xy[:,0].min(),xy[:,0].max()
+    ymin,ymax=xy[:,1].min(),xy[:,1].max()
+    dx=max((xmax-xmin)/max(grid_size-1,1),1e-6)
+    dy=max((ymax-ymin)/max(grid_size-1,1),1e-6)
+    density=np.zeros((grid_size,grid_size),dtype=float)
+    ix=np.clip(((xy[:,0]-xmin)/(xmax-xmin+1e-12)*(grid_size-1)).astype(int),0,grid_size-1)
+    iy=np.clip(((xy[:,1]-ymin)/(ymax-ymin+1e-12)*(grid_size-1)).astype(int),0,grid_size-1)
+    density[iy,ix]+=1.0
+    if sigma_pixels>0:
+        from scipy.ndimage import gaussian_filter
+        density=gaussian_filter(density,sigma=sigma_pixels)
+    F=np.fft.fftshift(np.fft.fft2(density))
+    power=np.abs(F)**2
+    power/=power.max() if power.max()>0 else 1.0
+    fx=np.fft.fftshift(np.fft.fftfreq(grid_size,d=dx))
+    fy=np.fft.fftshift(np.fft.fftfreq(grid_size,d=dy))
+    qx=2*np.pi*fx
+    qy=2*np.pi*fy
+    return density,power,qx,qy
+
+
+def plot_fft_crystal_projection(structure, ax=None, grid_size=256, sigma_pixels=1.0):
+    """Plot log-scaled 2D FFT intensity of the projected crystal density."""
+    density,power,qx,qy=fft_crystal_projection(structure,grid_size,sigma_pixels)
+    if ax is None:
+        ax=plt.subplots()[1]
+    extent=[qx.min(),qx.max(),qy.min(),qy.max()]
+    ax.imshow(np.log1p(100*power),origin='lower',extent=extent,aspect='equal')
+    ax.set_xlabel(r'$q_x$ (Å$^{-1}$)'); ax.set_ylabel(r'$q_y$ (Å$^{-1}$)')
+    ax.set_title('2D FFT of Projected Atomic Density')
+    return ax
