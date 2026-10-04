@@ -6,7 +6,7 @@ import streamlit as st
 
 from crystal.cif import read_cif
 from crystal.scattering import powder_pattern
-from visualization.plots import plot_structure, plot_xrd
+from visualization.plots import plot_structure, plot_xrd, plot_reciprocal_lattice
 from analysis.io import load_xrd_csv
 from analysis.xrd import detect_peaks, correct_instrumental_broadening, scherrer_size, williamson_hall
 from analysis.refinement import fit_single_peak, pseudo_voigt
@@ -23,6 +23,10 @@ with st.sidebar:
     hmax=st.slider('Maximum |h,k,l|',1,8,5)
     B=st.number_input('Debye–Waller B (Å²)',value=0.0,min_value=0.0)
     width=st.number_input('Simulated Gaussian width (°)',value=0.10,min_value=0.01)
+    reciprocal_hmax=st.slider('Reciprocal lattice |h,k,l|',1,6,4)
+    plane_h=st.number_input('Reciprocal plane h',value=1,min_value=-6,max_value=6,step=1)
+    plane_k=st.number_input('Reciprocal plane k',value=0,min_value=-6,max_value=6,step=1)
+    plane_l=st.number_input('Reciprocal plane l',value=0,min_value=-6,max_value=6,step=1)
     U=st.number_input('Caglioti U',value=0.0,format='%.6f')
     V=st.number_input('Caglioti V',value=0.0,format='%.6f')
     W=st.number_input('Caglioti W (deg²)',value=0.01,min_value=0.0,format='%.6f')
@@ -48,6 +52,12 @@ with tab1:
         a,b,c=np.linalg.norm(s.cell[0]),np.linalg.norm(s.cell[1]),np.linalg.norm(s.cell[2])
         st.write(f'a={a:.4f} Å, b={b:.4f} Å, c={c:.4f} Å')
     with c2:
+        fig=plt.figure(figsize=(6,5))
+        plot_reciprocal_lattice(s,fig.add_subplot(111,projection='3d'),hmax=reciprocal_hmax,plane_hkl=(plane_h,plane_k,plane_l))
+        st.pyplot(fig); plt.close(fig)
+        st.caption(f'Reciprocal-space visualization: lattice points up to |h,k,l| ≤ {reciprocal_hmax}; selected plane ({plane_h}{plane_k}{plane_l}).')
+    c1,c2=st.columns(2)
+    with c1:
         tt,I,peaks=powder_pattern(s,wavelength,hmax=hmax,B=B,peak_width=width)
         fig,ax=plt.subplots(figsize=(7,4)); plot_xrd(tt,I,ax); st.pyplot(fig); plt.close(fig)
 
