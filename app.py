@@ -11,13 +11,16 @@ from visualization.plots import (
     plot_structure, plot_xrd, plot_reciprocal_lattice,
     plot_fft_crystal_projection, plot_ift_reconstruction,
     radial_fft_profile, fft_ift_reconstruction,
-    plot_phonon_dispersion
+    plot_phonon_dispersion, plot_fft_phase, plot_fft_autocorrelation,
+    plot_diatomic_dispersion
 )
 from analysis.io import load_xrd_csv
-from analysis.xrd import detect_peaks, correct_instrumental_broadening, scherrer_size, williamson_hall
+from analysis.xrd import detect_peaks, correct_instrumental_broadening, scherrer_size, williamson_hall, cubic_d_spacing, bragg_two_theta
 from analysis.refinement import fit_single_peak, pseudo_voigt
 from analysis.instrument import InstrumentConfig
 from analysis.indexing import index_cubic_peaks
+from scipy.signal import savgol_filter
+from scipy.stats import linregress
 
 st.set_page_config(page_title='Crystal Structure & Lattice Dynamics Simulator V5', layout='wide')
 st.title('Crystal Structure & Lattice Dynamics Simulator — V5')
@@ -126,6 +129,20 @@ with tab_structure:
         st.write(f'**Defects:** {defect_fraction:.1f}%')
         st.write(f'**Thermal σ:** {thermal_sigma:.3f} Å')
     st.info('The disorder controls modify the model used by the visualization and Fourier/XRD simulation. The original CIF structure remains unchanged.')
+    st.subheader('Atomic Coordinates')
+    atom_rows = [
+        {'#': i+1, 'Element': a.element, 'fx': float(a.frac[0]), 'fy': float(a.frac[1]), 'fz': float(a.frac[2])}
+        for i, a in enumerate(sim_structure.atoms)
+    ]
+    atom_df = pd.DataFrame(atom_rows)
+    st.dataframe(atom_df, use_container_width=True, height=240)
+    st.download_button(
+        'Download atomic coordinates CSV',
+        atom_df.to_csv(index=False).encode(),
+        'atomic_coordinates.csv',
+        'text/csv'
+    )
+
 
 with tab_fourier:
     st.subheader('Reciprocal Lattice')
@@ -145,6 +162,28 @@ with tab_fourier:
         st.latex(r'\mathbf{G}=h\mathbf{b}_1+k\mathbf{b}_2+l\mathbf{b}_3')
         st.latex(r'\mathbf{G}_{hkl}\cdot\mathbf{r}=|\mathbf{G}_{hkl}|^2/2')
         st.write('The highlighted plane represents the reciprocal-space plane associated with the selected (hkl) reflection.')
+        hkl_norm = plane_h**2 + plane_k**2 + plane_l**2
+        if hkl_norm > 0:
+            d_selected = 1.0 / np.sqrt(
+                np.dot(
+                    plane_h*sim_structure.reciprocal_cell[0] +
+                    plane_k*sim_structure.reciprocal_cell[1] +
+                    plane_l*sim_structure.reciprocal_cell[2],
+                    plane_h*sim_structure.reciprocal_cell[0] +
+                    plane_k*sim_structure.reciprocal_cell[1] +
+                    plane_l*sim_structure.reciprocal_cell[2]
+                )
+            ) * 2*np.pi
+            Gvec = (plane_h*sim_structure.reciprocal_cell[0] +
+                    plane_k*sim_structure.reciprocal_cell[1] +
+                    plane_l*sim_structure.reciprocal_cell[2])
+            st.metric('Selected d-spacing', f'{d_selected:.4f} Å')
+            st.metric('|G|', f'{np.linalg.norm(Gvec):.4f} Å⁻¹')
+            try:
+                st.metric('Bragg 2θ', f'{float(bragg_two_theta(d_selected, wavelength)):.3f}°')
+            except ValueError:
+                st.warning('Selected (hkl) does not satisfy the Bragg condition for the current wavelength.')
+
 
     st.divider()
     st.subheader('Fourier Transform — FFT')
@@ -182,6 +221,21 @@ with tab_fourier:
         plt.close(fig)
     st.latex(r'\rho_{reconstructed}(x,y)=\mathcal{F}^{-1}\{F(q_x,q_y)\,M(q_x,q_y)\}')
     st.caption('Changing the cutoff demonstrates how removing high spatial frequencies changes the reconstructed real-space image.')
+    st.divider()
+    st.subheader('FFT Phase & Autocorrelation')
+    p1, p2 = st.columns(2)
+    with p1:
+        fig, ax = plt.subplots(figsize=(6, 4.5))
+        plot_fft_phase(sim_structure, ax, fft_grid, fft_sigma)
+        st.pyplot(fig)
+        plt.close(fig)
+    with p2:
+        fig, ax = plt.subplots(figsize=(6, 4.5))
+        plot_fft_autocorrelation(sim_structure, ax, fft_grid, fft_sigma)
+        st.pyplot(fig)
+        plt.close(fig)
+    st.caption('The FFT magnitude describes spatial-frequency strength; the phase retains positional information. The autocorrelation reveals characteristic real-space periodicities.');
+
 
     st.divider()
     st.subheader('Radial Fourier Profile')
@@ -212,8 +266,12 @@ with tab_xrd:
 
     if peaks:
         peak_df = pd.DataFrame(peaks, columns=['2θ', 'Intensity', 'hkl', 'd (Å)']).sort_values('Intensity', ascending=False)
-        st.subheader('Strongest calculated reflections')
-        st.dataframe(peak_df.head(15), use_container_width=True)
+        st.subheader('Indexed Reflection Analysis')
+        peak_df['Bragg check (°)'] = peak_df['2θ']
+        peak_df['Relative intensity (%)'] = 100*peak_df['Intensity']/max(peak_df['Intensity'].max(), 1e-15)
+        st.dataframe(peak_df.head(20), use_container_width=True)
+        st.caption('The reflection table links simulated 2θ, d-spacing, hkl and relative intensity.')
+
     st.info('The powder-XRD calculation is kept separate from the FFT panel: FFT demonstrates Fourier-space structure, while this panel calculates crystallographic scattering and powder diffraction.')
 
 with tab_exp:
@@ -228,6 +286,33 @@ with tab_exp:
             m3.metric('Median Δ2θ', f"{meta['median_step']:.4g}°" if np.isfinite(meta['median_step']) else '—')
             m4.metric('Detected format', 'Peak table' if meta['kind'] == 'peak_table' else 'Raw scan')
             st.caption(f'Using **{xname}** as 2θ and **{yname}** as intensity.')
+
+            # Optional transparent preprocessing of raw scans.
+            preprocess = st.expander('Raw-scan preprocessing', expanded=False)
+            if meta['kind'] == 'raw_scan':
+                with preprocess:
+                    use_baseline = st.checkbox('Subtract smooth baseline', value=False)
+                    normalize_exp = st.checkbox('Normalize intensity to 0–1', value=False)
+                    smooth_exp = st.checkbox('Savitzky–Golay smoothing', value=False)
+                    smooth_window = st.slider('Smoothing window (points)', 5, 101, 11, 2)
+                    smooth_poly = st.slider('Polynomial order', 2, 4, 2)
+                y_proc = np.asarray(y, dtype=float).copy()
+                if smooth_exp and smooth_window <= len(y_proc):
+                    if smooth_window % 2 == 0:
+                        smooth_window += 1
+                    smooth_window = min(smooth_window, len(y_proc) if len(y_proc)%2==1 else len(y_proc)-1)
+                    if smooth_window > smooth_poly:
+                        y_proc = savgol_filter(y_proc, smooth_window, smooth_poly)
+                if use_baseline:
+                    baseline_window = max(11, min(301, len(y_proc)//10*2+1))
+                    if baseline_window % 2 == 0:
+                        baseline_window += 1
+                    baseline = savgol_filter(y_proc, baseline_window, 2)
+                    y_proc = y_proc - baseline
+                if normalize_exp:
+                    ymin, ymax = np.min(y_proc), np.max(y_proc)
+                    y_proc = (y_proc-ymin)/(ymax-ymin+1e-15)
+                y = y_proc
 
             if meta['kind'] == 'peak_table':
                 st.warning('This is a peak/reflection table, not a raw XRD scan. Peak detection, FWHM fitting, Scherrer and Williamson–Hall require the original dense scan.')
@@ -355,9 +440,29 @@ with tab_size:
             ax.legend()
             st.pyplot(fig)
             plt.close(fig)
+            reg = linregress(wh[0], wh[1])
+            st.metric('Williamson–Hall R²', f'{reg.rvalue**2:.5f}')
+            residual = wh[1] - (reg.intercept + reg.slope*wh[0])
+            if len(residual) > 2:
+                stderr = np.sqrt(np.sum(residual**2)/(len(residual)-2))
+                st.caption(f'W–H regression residual standard error: {stderr:.3e} rad')
             st.download_button('Export size/strain report CSV', dframe.to_csv(index=False).encode(), 'size_strain_report.csv', 'text/csv')
 
 with tab_dyn:
+    st.subheader('Diatomic Chain: Acoustic + Optical Modes')
+    d1, d2 = st.columns([1, 2])
+    with d1:
+        kappa = st.slider('Nearest-neighbour coupling κ', 0.1, 10.0, 1.0, 0.1)
+        m1 = st.slider('Mass M₁', 0.1, 10.0, 1.0, 0.1)
+        m2 = st.slider('Mass M₂', 0.1, 10.0, 2.0, 0.1)
+        st.latex(r'\omega_{\pm}^2=\kappa(1/M_1+1/M_2)\pm\sqrt{\kappa^2(1/M_1+1/M_2)^2-4\kappa^2\sin^2(qa/2)/(M_1M_2)}')
+    with d2:
+        fig, ax = plt.subplots(figsize=(8, 4))
+        plot_diatomic_dispersion(ax, kappa, m1, m2)
+        st.pyplot(fig)
+        plt.close(fig)
+
+    st.divider()
     st.subheader('Lattice Dynamics — 1D Harmonic Chain')
     st.caption('A transparent monoatomic nearest-neighbour model for visualizing acoustic phonons. This is a model dispersion, not a first-principles phonon calculation for the uploaded material.')
     c1, c2 = st.columns([1, 2])
