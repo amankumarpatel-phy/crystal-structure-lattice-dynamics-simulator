@@ -1,0 +1,16 @@
+data_silicon
+_chemical_name_common 'Silicon'
+_cell_length_a 5.4309
+_cell_length_b 5.4309
+_cell_length_c 5.4309
+_cell_angle_alpha 90
+_cell_angle_beta 90
+_cell_angle_gamma 90
+loop_
+_atom_site_label
+_atom_site_type_symbol
+_atom_site_fract_x
+_atom_site_fract_y
+_atom_site_fract_z
+Si1 Si 0.00000 0.00000 0.00000
+Si2 Si 0.25000 0.25000 0.25000
