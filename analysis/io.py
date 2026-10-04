@@ -66,6 +66,8 @@ def load_xrd_csv(source):
 
     meta = {
         "kind": kind,
+        "minimum_raw_scan_points": 1000,
+        "raw_scan_eligible": bool(kind == "raw_scan" and x.size >= 1000),
         "n_points": int(x.size),
         "x_column": str(xcol),
         "y_column": str(ycol),
